@@ -62,6 +62,24 @@ async function shopeeQuery(query) {
   return r.json();
 }
 
+
+// A API de afiliados só devolve 1 imagem. Tenta achar as outras na página pública do anúncio (pode falhar: a Shopee protege a página).
+async function collectImages(p) {
+  const hashOf = (u) => (u.match(/\/file\/([a-z0-9\-_]{16,})/i) || [])[1];
+  const seen = new Set(), out = [];
+  const add = (h) => { h = h && h.replace(/_tn$/, ''); if (h && !seen.has(h) && out.length < 4) { seen.add(h); out.push('https://down-br.img.susercontent.com/file/' + h); } };
+  if (p.imageUrl) { add(hashOf(p.imageUrl)); if (!out.length) out.push(p.imageUrl); }
+  try {
+    const r = await fetch(p.productLink || `https://shopee.com.br/product/${p.shopId}/${p.itemId}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36', 'Accept-Language': 'pt-BR,pt;q=0.9' },
+      signal: AbortSignal.timeout(8000),
+    });
+    const html = await r.text();
+    for (const m of html.matchAll(/\/file\/([a-z0-9\-_]{16,})/gi)) add(m[1]);
+  } catch {}
+  return out;
+}
+
 async function imageToDataUrl(url) {
   try {
     const r = await fetch(url);
@@ -96,7 +114,9 @@ async function handleProduct(req, res) {
 
     const p = data?.data?.productOfferV2?.nodes?.[0];
     if (!p) return send(res, 404, { error: 'Produto não encontrado no catálogo de afiliados.' });
-    send(res, 200, { ...p, imageData: p.imageUrl ? await imageToDataUrl(p.imageUrl) : null });
+    const urls = await collectImages(p);
+    const images = (await Promise.all(urls.map(imageToDataUrl))).filter(Boolean);
+    send(res, 200, { ...p, images, imageData: images[0] || null });
   } catch (e) {
     send(res, 500, { error: 'Falha no servidor: ' + e.message });
   }
