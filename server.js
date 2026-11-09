@@ -15,7 +15,17 @@ try {
   }
 } catch {}
 
-const APP_ID = process.env.SHOPEE_APP_ID, SECRET = process.env.SHOPEE_SECRET;
+let APP_ID = process.env.SHOPEE_APP_ID, SECRET = process.env.SHOPEE_SECRET;
+const PASSWORD = process.env.APP_PASSWORD || '';          // opcional: protege o app se for hospedado publicamente
+const CRED_FILE = path.join(process.env.DATA_DIR || __dirname, 'credentials.json');
+if (!APP_ID || !SECRET) {
+  try { ({ appId: APP_ID, secret: SECRET } = JSON.parse(fs.readFileSync(CRED_FILE, 'utf8'))); } catch {}
+}
+// Hospedado (a plataforma define PORT) = público: exige APP_PASSWORD. Local = só aceita conexões do próprio computador.
+const PUBLIC = !!process.env.PORT || process.env.HOST === '0.0.0.0';
+const HOST = process.env.HOST || (PUBLIC ? '0.0.0.0' : '127.0.0.1');
+const authed = (req) => (PUBLIC && !PASSWORD) ? false : (!PASSWORD || req.headers['x-app-password'] === PASSWORD);
+const readBody = async (req) => { let b = ''; for await (const c of req) b += c; return b; };
 const PORT = process.env.PORT || 3000;
 const ENDPOINT = 'https://open-api.affiliate.shopee.com.br/graphql';
 
@@ -66,7 +76,8 @@ const send = (res, status, data) => {
 };
 
 async function handleProduct(req, res) {
-  if (!APP_ID || !SECRET) return send(res, 500, { error: 'Defina SHOPEE_APP_ID e SHOPEE_SECRET no arquivo .env e reinicie o servidor.' });
+  if (!authed(req)) return send(res, 401, { error: 'Acesso negado: defina APP_PASSWORD no servidor e informe a mesma senha no painel.' });
+  if (!APP_ID || !SECRET) return send(res, 500, { error: 'Credenciais não configuradas. Preencha o painel "Conexão com a Shopee" e salve. Se aparecer isso, defina SHOPEE_APP_ID e SHOPEE_SECRET ou no arquivo .env.' });
   let body = '';
   for await (const chunk of req) body += chunk;
   let link;
@@ -91,7 +102,20 @@ async function handleProduct(req, res) {
   }
 }
 
-http.createServer((req, res) => {
+http.createServer(async (req, res) => {
+  if (req.method === 'GET' && req.url === '/api/status') return send(res, 200, { configured: !!(APP_ID && SECRET), needsPassword: !!PASSWORD });
+  if (req.method === 'POST' && req.url === '/api/credentials') {
+    if (!authed(req)) return send(res, 401, { error: 'Acesso negado: defina APP_PASSWORD no servidor e informe a mesma senha no painel.' });
+    try {
+      const d = JSON.parse(await readBody(req));
+      const id = String(d.appId || '').trim(), sec = String(d.secret || '').trim() || SECRET;
+      if (!id || !sec) return send(res, 400, { error: 'Informe AppID e Secret.' });
+      APP_ID = id; SECRET = sec;
+      try { fs.writeFileSync(CRED_FILE, JSON.stringify({ appId: APP_ID, secret: SECRET }), { mode: 0o600 }); }
+      catch { return send(res, 200, { ok: true, warning: 'Salvo só na memória (o servidor não conseguiu gravar em disco); será perdido ao reiniciar.' }); }
+      return send(res, 200, { ok: true });
+    } catch { return send(res, 400, { error: 'JSON inválido.' }); }
+  }
   if (req.method === 'POST' && req.url === '/api/product') return handleProduct(req, res);
   if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/index.html'))) {
     return fs.readFile(path.join(__dirname, 'index.html'), (err, buf) => {
@@ -101,7 +125,8 @@ http.createServer((req, res) => {
     });
   }
   res.writeHead(404); res.end('Not found');
-}).listen(PORT, '127.0.0.1', () => {
+}).listen(PORT, HOST, () => {
   console.log(`App rodando em http://localhost:${PORT}`);
   if (!APP_ID || !SECRET) console.log('Atenção: credenciais não configuradas (.env).');
+  if (PUBLIC && !PASSWORD) console.log('ATENÇÃO: servidor público sem APP_PASSWORD. A API ficará bloqueada até você definir essa variável.');
 });

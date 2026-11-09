@@ -33,6 +33,14 @@ canvas{width:100%;max-width:300px;aspect-ratio:9/16;background:#000;border-radiu
 <header><h1>🛍️ Gerador de Vídeos para Shopee</h1><p>Roteiro + vídeo vertical 9:16, direto no navegador</p></header>
 <main>
 <section class="card">
+  <details id="conn" style="border:1px solid var(--bd);border-radius:10px;padding:12px;margin-bottom:14px">
+    <summary style="cursor:pointer;font-weight:600">Conexão com a Shopee <span id="badge" style="font-size:.72rem;padding:2px 8px;border-radius:99px;background:var(--bd);color:var(--mut);margin-left:6px">verificando...</span></summary>
+    <label>AppID</label><input id="appid" placeholder="Seu AppID da API de Afiliados">
+    <label>Secret</label><input id="secret" type="password" placeholder="Deixe vazio para manter o atual">
+    <label>Senha de acesso (só se o servidor tiver APP_PASSWORD)</label><input id="apppass" type="password" placeholder="Opcional">
+    <div class="btns"><button id="saveCred" type="button">Salvar credenciais</button></div>
+    <p class="note" id="connNote">As credenciais ficam guardadas no servidor e nunca voltam para o navegador.</p>
+  </details>
   <h2>1. Produto</h2>
   <label>Link do produto / afiliado (aparece no vídeo e na legenda)</label>
   <div class="row"><input id="link" placeholder="https://shopee.com.br/... ou https://shope.ee/..." style="flex:3"><button id="fetchBtn" style="flex:1">🔎 Buscar dados</button></div>
@@ -281,8 +289,8 @@ $('fetchBtn').onclick = async () => {
   try { localStorage.setItem(WK, wk); } catch (e) {}
   $('fetchBtn').disabled = true; setStatus('Buscando dados na Shopee...');
   try {
-    const r = await fetch(wk || '/api/product', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: link }) });
-    const p = await r.json();
+    const r = await fetch(wk || '/api/product', { method: 'POST', headers: hdr(), body: JSON.stringify({ url: link }) });
+    const p = await r.json().catch(() => { throw new Error(NOSERVER); });
     if (!r.ok) throw new Error(p.error + (p.details ? ' ' + JSON.stringify(p.details) : ''));
     $('title').value = p.productName || '';
     const min = p.priceMin || p.price, max = p.priceMax;
@@ -300,6 +308,28 @@ $('fetchBtn').onclick = async () => {
   } catch (e) { setStatus('Erro: ' + e.message); }
   $('fetchBtn').disabled = false;
 };
+
+const NOSERVER = 'Este site não tem servidor para consultar a Shopee. Rode "node server.js" no seu computador (e abra http://localhost:3000) ou hospede o server.js, ou preencha os dados à mão.';
+const hdr = () => { const h = { 'Content-Type': 'application/json' }, pw = $('apppass').value; if (pw) h['x-app-password'] = pw; return h; };
+const apiBase = () => $('worker').value.trim().replace(/\/$/, '');
+function setBadge(t, ok) { const b = $('badge'); b.textContent = t; b.style.background = ok ? '#1f9d55' : (ok === false ? '#ee4d2d' : 'var(--bd)'); b.style.color = ok === undefined ? 'var(--mut)' : '#fff'; }
+async function checkStatus() {
+  if (apiBase()) { setBadge('via Worker', true); $('connNote').textContent = 'Usando o Worker: as credenciais ficam nas variáveis do Worker na Cloudflare.'; return; }
+  try {
+    const r = await fetch('/api/status'); const d = await r.json();
+    setBadge(d.configured ? 'configurado' : 'não configurado', d.configured);
+  } catch (e) { setBadge('sem servidor', false); $('connNote').textContent = NOSERVER; $('conn').open = true; }
+}
+$('saveCred').onclick = async () => {
+  try {
+    const r = await fetch('/api/credentials', { method: 'POST', headers: hdr(), body: JSON.stringify({ appId: $('appid').value, secret: $('secret').value }) });
+    const d = await r.json().catch(() => { throw new Error(NOSERVER); });
+    if (!r.ok) throw new Error(d.error);
+    $('secret').value = ''; setStatus(d.warning || 'Credenciais salvas no servidor.'); checkStatus();
+  } catch (e) { setStatus('Erro: ' + e.message); }
+};
+$('worker').addEventListener('change', checkStatus);
+checkStatus();
 
 drawFrame(0, 0, ['Seu vídeo aparece aqui']);
 updateCaption();
