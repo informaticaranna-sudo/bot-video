@@ -70,6 +70,11 @@ async function collectImages(p) {
   const add = (h) => { h = h && h.replace(/_tn$/, ''); if (h && !seen.has(h) && out.length < 4) { seen.add(h); out.push('https://down-br.img.susercontent.com/file/' + h); } };
   if (p.imageUrl) { add(hashOf(p.imageUrl)); if (!out.length) out.push(p.imageUrl); }
   try {
+    const r0 = await fetch(`https://shopee.com.br/api/v4/item/get?itemid=${p.itemId}&shopid=${p.shopId}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124 Safari/537.36', 'Accept-Language': 'pt-BR' }, signal: AbortSignal.timeout(6000) });
+    const j = await r0.json(); (j?.data?.images || []).forEach(add);
+  } catch {}
+  try {
     const r = await fetch(p.productLink || `https://shopee.com.br/product/${p.shopId}/${p.itemId}`, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36', 'Accept-Language': 'pt-BR,pt;q=0.9' },
       signal: AbortSignal.timeout(8000),
@@ -135,6 +140,16 @@ http.createServer(async (req, res) => {
       catch { return send(res, 200, { ok: true, warning: 'Salvo só na memória (o servidor não conseguiu gravar em disco); será perdido ao reiniciar.' }); }
       return send(res, 200, { ok: true });
     } catch { return send(res, 400, { error: 'JSON inválido.' }); }
+  }
+  if (req.method === 'GET' && req.url.startsWith('/api/image?')) {
+    if (!authed(req)) { res.writeHead(401); return res.end(); }
+    try {
+      const u = new URL(new URLSearchParams(req.url.split('?')[1]).get('u'));
+      if (!/(^|\.)(susercontent\.com|shopee\.com\.br)$/.test(u.hostname)) { res.writeHead(403); return res.end(); }
+      const r = await fetch(u, { signal: AbortSignal.timeout(10000) });
+      res.writeHead(r.ok ? 200 : 502, { 'Content-Type': r.headers.get('content-type') || 'image/jpeg' });
+      return res.end(Buffer.from(await r.arrayBuffer()));
+    } catch { res.writeHead(400); return res.end(); }
   }
   if (req.method === 'POST' && req.url === '/api/product') return handleProduct(req, res);
   if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/index.html'))) {
