@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gerador de Vídeos para Shopee</title>
+<style>
+:root{--bg:#fafafa;--card:#fff;--tx:#1a1a1a;--mut:#666;--bd:#e3e3e3;--pr:#ee4d2d;--pr2:#d73e20}
+@media (prefers-color-scheme:dark){:root{--bg:#141414;--card:#1f1f1f;--tx:#f2f2f2;--mut:#a0a0a0;--bd:#333}}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx);line-height:1.45}
+header{padding:20px;text-align:center;background:var(--pr);color:#fff}
+header h1{margin:0;font-size:1.4rem}header p{margin:4px 0 0;opacity:.9;font-size:.9rem}
+main{max-width:1000px;margin:0 auto;padding:16px;display:grid;gap:16px;grid-template-columns:1fr 340px}
+@media(max-width:820px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px}
+label{display:block;font-size:.82rem;color:var(--mut);margin:12px 0 4px}
+input,textarea,select{width:100%;padding:10px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+textarea{min-height:90px;resize:vertical}
+.row{display:flex;gap:10px}.row>*{flex:1}
+button{padding:11px 16px;border:0;border-radius:8px;background:var(--pr);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+button:hover{background:var(--pr2)}button.sec{background:var(--bd);color:var(--tx)}button:disabled{opacity:.5;cursor:default}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+h2{font-size:1rem;margin:0 0 4px}
+.thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.thumbs img{width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--bd)}
+canvas{width:100%;max-width:300px;aspect-ratio:9/16;background:#000;border-radius:10px;display:block;margin:0 auto}
+.note{font-size:.78rem;color:var(--mut);margin-top:8px}
+#status{font-size:.85rem;color:var(--mut);text-align:center;margin:8px 0}
+</style>
+</head>
+<body>
+<header><h1>🛍️ Gerador de Vídeos para Shopee</h1><p>Roteiro + vídeo vertical 9:16, direto no navegador</p></header>
+<main>
+<section class="card">
+  <h2>1. Produto</h2>
+  <label>Link do produto / afiliado (aparece no vídeo e na legenda)</label>
+  <div class="row"><input id="link" placeholder="https://shopee.com.br/... ou https://shope.ee/..." style="flex:3"><button id="fetchBtn" style="flex:1">🔎 Buscar dados</button></div>
+  <label>URL do Worker (Cloudflare) — deixe em branco se estiver rodando o servidor local (node server.js)</label>
+  <input id="worker" placeholder="https://shopee-bot.seu-usuario.workers.dev">
+  <label>Nome do produto</label>
+  <input id="title" placeholder="Ex.: Mini Liquidificador Portátil USB">
+  <div class="row">
+    <div><label>Preço (R$)</label><input id="price" placeholder="39,90"></div>
+    <div><label>Preço antigo (R$, opcional)</label><input id="old" placeholder="79,90"></div>
+  </div>
+  <label>Benefícios (um por linha)</label>
+  <textarea id="benefits" placeholder="Carrega por USB&#10;Cabe na bolsa&#10;Lavagem fácil"></textarea>
+  <label>Imagens do produto (salve da página do anúncio e envie aqui)</label>
+  <input id="imgs" type="file" accept="image/*" multiple>
+  <div class="thumbs" id="thumbs"></div>
+
+  <h2 style="margin-top:20px">2. Roteiro</h2>
+  <div class="row">
+    <div><label>Estilo</label>
+      <select id="style"><option value="urg">Urgência / oferta</option><option value="rev">Review / indicação</option><option value="cur">Curiosidade</option></select></div>
+    <div><label>Chave da API Claude (opcional)</label><input id="key" type="password" placeholder="sk-ant-..."></div>
+  </div>
+  <div class="btns"><button id="genScript">Gerar roteiro</button><button class="sec" id="speak">🔊 Ouvir narração</button></div>
+  <label>Linhas do roteiro (uma por cena — pode editar)</label>
+  <textarea id="script" style="min-height:140px"></textarea>
+  <label>Música de fundo (opcional, MP3)</label>
+  <input id="music" type="file" accept="audio/*">
+  <p class="note">Sem chave da API, o roteiro vem de modelos prontos. Com a chave, o Claude escreve um roteiro único. A chave fica só no seu navegador e vai direto para a Anthropic. Use por sua conta e risco em computador próprio.</p>
+</section>
+
+<section class="card">
+  <h2>3. Vídeo</h2>
+  <canvas id="cv" width="720" height="1280"></canvas>
+  <div id="status">Pronto.</div>
+  <div class="btns" style="justify-content:center">
+    <button id="make">🎬 Gerar vídeo</button>
+    <a id="dl" style="display:none"><button class="sec" type="button">⬇️ Baixar</button></a>
+  </div>
+  <label>Legenda sugerida para postar</label>
+  <textarea id="caption" style="min-height:110px"></textarea>
+  <button class="sec" id="copy" style="margin-top:8px">Copiar legenda</button>
+  <p class="note">A narração é só para ouvir de referência (o navegador não consegue gravá-la dentro do vídeo). O vídeo sai com legendas na tela e a música opcional.</p>
+</section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height;
+let images = [];
+
+$('imgs').addEventListener('change', async e => {
+  images = []; $('thumbs').innerHTML = '';
+  for (const f of e.target.files) {
+    const url = URL.createObjectURL(f);
+    const img = new Image(); img.src = url;
+    await img.decode().catch(() => {});
+    images.push(img);
+    const t = img.cloneNode(); $('thumbs').appendChild(t);
+  }
+  drawFrame(0, 0, getLines());
+});
+
+const fmt = v => v ? 'R$ ' + v.replace(/^R\$\s*/, '') : '';
+const benefits = () => $('benefits').value.split('\n').map(s => s.trim()).filter(Boolean);
+const getLines = () => $('script').value.split('\n').map(s => s.trim()).filter(Boolean);
+
+function templateScript() {
+  const t = $('title').value.trim() || 'este produto', p = fmt($('price').value.trim()), o = fmt($('old').value.trim());
+  const b = benefits(), st = $('style').value;
+  const priceLine = p ? (o ? `De ${o} por apenas ${p}!` : `Hoje por apenas ${p}!`) : 'Com preço muito bom hoje!';
+  const L = [];
+  if (st === 'urg') L.push('Corre que essa oferta da Shopee pode acabar!', `${t}.`);
+  else if (st === 'rev') L.push('Comprei e recomendo demais!', `${t} superou minhas expectativas.`);
+  else L.push('Você sabia que existe isso?', `Conheça ${t}.`);
+  b.slice(0, 4).forEach(x => L.push(x + '.'));
+  L.push(priceLine, 'Link na bio ou nos comentários. Aproveita!');
+  return L;
+}
+
+async function claudeScript() {
+  const prompt = `Crie um roteiro curto em português do Brasil para um vídeo vertical de divulgação (Reels/TikTok), de uns 20 a 30 segundos.
+Produto: ${$('title').value}
+Preço: ${fmt($('price').value)} ${$('old').value ? '(antes ' + fmt($('old').value) + ')' : ''}
+Benefícios: ${benefits().join('; ') || 'não informados'}
+Estilo: ${$('style').selectedOptions[0].text}
+Regras: 6 a 8 linhas curtas (máx. 12 palavras cada), começando com um gancho forte e terminando com chamada para ação. Não invente características que não foram informadas. Responda APENAS com um array JSON de strings.`;
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': $('key').value.trim(),
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 800, messages: [{ role: 'user', content: prompt }] })
+  });
+  if (!r.ok) throw new Error('API ' + r.status);
+  const d = await r.json();
+  const txt = d.content.map(c => c.text || '').join('').replace(/```json|```/g, '').trim();
+  return JSON.parse(txt);
+}
+
+$('genScript').onclick = async () => {
+  $('genScript').disabled = true; setStatus('Gerando roteiro...');
+  let lines;
+  try { lines = $('key').value.trim() ? await claudeScript() : templateScript(); }
+  catch (e) { lines = templateScript(); setStatus('Não consegui usar a API (' + e.message + '). Usei o modelo pronto.'); }
+  $('script').value = lines.join('\n');
+  updateCaption(); drawFrame(0, 0, lines);
+  $('genScript').disabled = false;
+  if (!$('status').textContent.startsWith('Não')) setStatus('Roteiro pronto. Edite se quiser.');
+};
+
+function updateCaption() {
+  const b = benefits().map(x => '✅ ' + x).join('\n');
+  $('caption').value = `🔥 ${$('title').value || 'Achadinho da Shopee'}\n${b}\n\n💰 ${fmt($('price').value)}${$('old').value ? ' (antes ' + fmt($('old').value) + ')' : ''}\n🛒 ${$('link').value || '[seu link]'}\n\n#shopee #achadinhos #promoção #ofertas`;
+}
+['title','price','old','benefits','link'].forEach(i => $(i).addEventListener('input', updateCaption));
+$('copy').onclick = () => navigator.clipboard.writeText($('caption').value).then(() => setStatus('Legenda copiada!'));
+
+$('speak').onclick = () => {
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(getLines().join(' '));
+  u.lang = 'pt-BR'; u.rate = 1.05; speechSynthesis.speak(u);
+};
+
+function setStatus(s) { $('status').textContent = s; }
+
+function wrap(text, maxW) {
+  const words = text.split(' '), lines = []; let cur = '';
+  for (const w of words) {
+    const t = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+function cover(img, zoom) {
+  const s = Math.max(W / img.width, H / img.height) * zoom;
+  const w = img.width * s, h = img.height * s;
+  ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+}
+
+// slideIdx: scene index, p: 0..1 progress in scene
+function drawFrame(slideIdx, p, lines, total = 0, elapsed = 0) {
+  ctx.fillStyle = '#111'; ctx.fillRect(0, 0, W, H);
+  if (images.length) cover(images[slideIdx % images.length], 1 + 0.12 * p);
+  else { const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#ee4d2d'); g.addColorStop(1, '#ff9a5a'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+  const g = ctx.createLinearGradient(0, H * 0.5, 0, H);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.85)');
+  ctx.fillStyle = g; ctx.fillRect(0, H * 0.5, W, H * 0.5);
+
+  // price badge
+  const price = fmt($('price').value.trim());
+  if (price) {
+    ctx.font = 'bold 54px system-ui,sans-serif';
+    const old = fmt($('old').value.trim());
+    const bw = ctx.measureText(price).width + 56;
+    ctx.fillStyle = '#ee4d2d'; ctx.beginPath(); ctx.roundRect(36, 70, bw, 96, 20); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle'; ctx.fillText(price, 64, 118);
+    if (old) {
+      ctx.font = '600 34px system-ui,sans-serif';
+      const ow = ctx.measureText(old).width;
+      ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.beginPath(); ctx.roundRect(36, 178, ow + 36, 58, 14); ctx.fill();
+      ctx.fillStyle = '#ddd'; ctx.fillText(old, 54, 207);
+      ctx.fillRect(54, 207, ow, 3);
+    }
+  }
+
+  // caption
+  const text = lines[slideIdx] || '';
+  ctx.font = 'bold 64px system-ui,sans-serif'; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
+  const wl = wrap(text, W - 120);
+  const lh = 80, y0 = H - 260 - (wl.length - 1) * lh;
+  wl.forEach((l, i) => {
+    ctx.lineWidth = 12; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.lineJoin = 'round';
+    ctx.strokeText(l, W / 2, y0 + i * lh);
+    ctx.fillStyle = '#fff'; ctx.fillText(l, W / 2, y0 + i * lh);
+  });
+  ctx.textAlign = 'left';
+
+  // CTA on last scene
+  if (lines.length && slideIdx === lines.length - 1) {
+    ctx.fillStyle = '#ee4d2d'; ctx.beginPath(); ctx.roundRect(W / 2 - 250, H - 150, 500, 88, 44); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 40px system-ui,sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('🛒 COMPRE NA SHOPEE', W / 2, H - 94); ctx.textAlign = 'left';
+  }
+  // progress bar
+  if (total) { ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(0, H - 10, W, 10); ctx.fillStyle = '#ee4d2d'; ctx.fillRect(0, H - 10, W * Math.min(1, elapsed / total), 10); }
+}
+
+$('make').onclick = async () => {
+  const lines = getLines();
+  if (!lines.length) return setStatus('Gere ou escreva o roteiro primeiro.');
+  if (!window.MediaRecorder) return setStatus('Seu navegador não suporta gravação. Use o Chrome.');
+  $('make').disabled = true; $('dl').style.display = 'none';
+  const durs = lines.map(l => Math.max(2.4, l.split(/\s+/).length * 0.42));
+  const total = durs.reduce((a, b) => a + b, 0);
+
+  const stream = cv.captureStream(30);
+  let actx = null, src = null;
+  const mf = $('music').files[0];
+  if (mf) {
+    try {
+      actx = new AudioContext();
+      const buf = await actx.decodeAudioData(await mf.arrayBuffer());
+      const dest = actx.createMediaStreamDestination();
+      src = actx.createBufferSource(); src.buffer = buf; src.loop = true;
+      const gain = actx.createGain(); gain.gain.value = 0.5;
+      src.connect(gain).connect(dest);
+      dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+    } catch (e) { setStatus('Não consegui ler a música; seguindo sem áudio.'); }
+  }
+  const mime = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m));
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 5e6 });
+  const chunks = []; rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+  rec.onstop = () => {
+    const blob = new Blob(chunks, { type: mime.split(';')[0] });
+    const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+    $('dl').href = URL.createObjectURL(blob); $('dl').download = 'video-shopee.' + ext;
+    $('dl').style.display = 'inline-block'; $('make').disabled = false;
+    setStatus('Vídeo pronto! (' + ext.toUpperCase() + ')'); if (actx) actx.close();
+  };
+  rec.start(); if (src) src.start();
+  const t0 = performance.now();
+  (function loop() {
+    const el = (performance.now() - t0) / 1000;
+    if (el >= total) { drawFrame(lines.length - 1, 1, lines, total, total); setTimeout(() => rec.stop(), 150); return; }
+    let acc = 0, i = 0; while (i < durs.length - 1 && el >= acc + durs[i]) { acc += durs[i]; i++; }
+    drawFrame(i, (el - acc) / durs[i], lines, total, el);
+    setStatus(`Gravando... ${Math.round(el)}s / ${Math.round(total)}s`);
+    requestAnimationFrame(loop);
+  })();
+};
+
+const WK = 'shopee_worker_url';
+try { $('worker').value = localStorage.getItem(WK) || ''; } catch (e) {}
+const brl = n => { const v = Number(n); return isFinite(v) && v > 0 ? v.toFixed(2).replace('.', ',') : ''; };
+
+$('fetchBtn').onclick = async () => {
+  const link = $('link').value.trim(), wk = $('worker').value.trim().replace(/\/$/, '');
+  if (!link) return setStatus('Cole o link do produto.');
+  try { localStorage.setItem(WK, wk); } catch (e) {}
+  $('fetchBtn').disabled = true; setStatus('Buscando dados na Shopee...');
+  try {
+    const r = await fetch(wk || '/api/product', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: link }) });
+    const p = await r.json();
+    if (!r.ok) throw new Error(p.error + (p.details ? ' ' + JSON.stringify(p.details) : ''));
+    $('title').value = p.productName || '';
+    const min = p.priceMin || p.price, max = p.priceMax;
+    $('price').value = brl(min);
+    if (p.offerLink) $('link').value = p.offerLink;
+    if (p.imageData) {
+      const img = new Image(); img.src = p.imageData; await img.decode();
+      images.unshift(img); const t = img.cloneNode(); $('thumbs').prepend(t);
+    }
+    updateCaption(); drawFrame(0, 0, getLines());
+    const extra = [];
+    if (p.ratingStar) extra.push(`nota ${Number(p.ratingStar).toFixed(1)}`);
+    if (p.sales) extra.push(`${p.sales} vendidos`);
+    setStatus('Dados carregados' + (extra.length ? ' (' + extra.join(', ') + ')' : '') + '. Confira o preço' + (max && max !== min ? ' (varia por modelo)' : '') + ' e gere o roteiro.');
+  } catch (e) { setStatus('Erro: ' + e.message); }
+  $('fetchBtn').disabled = false;
+};
+
+drawFrame(0, 0, ['Seu vídeo aparece aqui']);
+updateCaption();
+</script>
+</body>
+</html>
