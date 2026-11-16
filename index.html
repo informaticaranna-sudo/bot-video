@@ -177,7 +177,7 @@ textarea{min-height:84px;resize:vertical}
         <div class="tx"><b style="font-size:.92rem">Narração com voz</b><small id="narrTxt">Grava a voz dentro do vídeo</small></div>
         <label class="sw" style="margin:0"><input type="checkbox" id="narr" checked><i></i></label>
       </div>
-      <p class="note" id="legacyNote">As músicas são geradas no navegador (sem direitos autorais).</p>
+      <p class="note" id="legacyNote">As músicas são geradas no navegador (sem direitos autorais). Para um som mais parecido com os vídeos da Shopee, escolha “Usar meu arquivo…” e envie uma faixa livre de direitos (ou da biblioteca do TikTok/CapCut).</p>
     </div>
   </details>
 </section>
@@ -203,16 +203,42 @@ textarea{min-height:84px;resize:vertical}
   </div>
   <div class="card">
     <div class="sec-t">IA de vídeo — Vídeo HD <span class="badge" id="bAI">…</span></div>
-    <p class="note" style="margin-top:4px">Anima as fotos com movimento real de câmera (imagem → vídeo) via fal.ai. Cobrado por clipe gerado.</p>
-    <label>Chave do fal.ai (FAL_KEY)</label><input class="in" id="falKey" type="password" placeholder="Deixe vazio para manter a atual" autocomplete="off">
-    <label>Modelo</label><input class="in" id="falModel" placeholder="fal-ai/kling-video/v2.1/pro/image-to-video" autocomplete="off">
-    <p class="note">Qualquer modelo imagem→vídeo do fal.ai que aceite <code>prompt</code>, <code>image_url</code> e <code>duration</code>.</p>
+    <p class="note" style="margin-top:4px">Anima as fotos com movimento real de câmera (imagem → vídeo). Cobrado por clipe gerado.</p>
+    <label>Provedor</label>
+    <select id="videoProvider"><option value="fal">fal.ai (vários modelos, inclusive Kling)</option><option value="kling">Kling AI (API oficial)</option></select>
+    <div id="falBox">
+      <label>Chave do fal.ai (FAL_KEY)</label><input class="in" id="falKey" type="password" placeholder="Deixe vazio para manter a atual" autocomplete="off">
+      <label>Modelo</label><input class="in" id="falModel" placeholder="fal-ai/kling-video/v2.1/pro/image-to-video" autocomplete="off">
+      <p class="note">Qualquer modelo imagem→vídeo do fal.ai que aceite <code>prompt</code>, <code>image_url</code> e <code>duration</code>.</p>
+    </div>
+    <div id="klingBox">
+      <label>Access Key da Kling</label><input class="in" id="klingAccessKey" type="password" placeholder="Deixe vazio para manter a atual" autocomplete="off">
+      <label>Secret Key da Kling</label><input class="in" id="klingSecretKey" type="password" placeholder="Deixe vazio para manter a atual" autocomplete="off">
+      <label>Modelo</label><input class="in" id="klingModel" placeholder="kling-v2-6" autocomplete="off">
+      <label>Endereço da API (opcional)</label><input class="in" id="klingBase" placeholder="https://api-singapore.klingai.com" autocomplete="off">
+      <p class="note">Crie as chaves no painel de desenvolvedor da Kling (klingai.com → API). Precisa de créditos/pacote de API. Se a sua conta for da China, use <code>https://api-beijing.klingai.com</code>.</p>
+    </div>
   </div>
   <div class="card">
     <div class="sec-t">Narração <span class="badge" id="bTTS">…</span></div>
-    <p class="note" style="margin-top:4px">Voz natural gravada dentro do vídeo (OpenAI). Sem chave, o vídeo sai só com música e legendas.</p>
-    <label>Chave da OpenAI</label><input class="in" id="openaiKey" type="password" placeholder="Deixe vazio para manter a atual" autocomplete="off">
-    <label>Voz</label><select id="voice"><option value="nova">Nova (feminina, animada)</option><option value="shimmer">Shimmer (feminina, suave)</option><option value="coral">Coral (feminina)</option><option value="onyx">Onyx (masculina, grave)</option><option value="echo">Echo (masculina)</option><option value="ash">Ash (masculina, jovem)</option></select>
+    <p class="note" style="margin-top:4px">Voz natural gravada dentro do vídeo. Sem chave, o vídeo sai só com música e legendas.</p>
+    <label>Provedor</label>
+    <select id="ttsProvider"><option value="gemini">Google Gemini (AI Studio)</option><option value="openai">OpenAI</option></select>
+    <div id="geminiBox">
+      <label>Chave do Google AI Studio (GEMINI_API_KEY)</label><input class="in" id="geminiKey" type="password" placeholder="Deixe vazio para manter a atual" autocomplete="off">
+      <label>Voz</label><select id="geminiVoice">
+        <option value="Leda">Leda (feminina, jovem)</option><option value="Zephyr">Zephyr (feminina, brilhante)</option><option value="Puck">Puck (animada)</option>
+        <option value="Aoede">Aoede (feminina, leve)</option><option value="Sulafat">Sulafat (feminina, calorosa)</option><option value="Kore">Kore (feminina, firme)</option>
+        <option value="Callirrhoe">Callirrhoe (feminina, tranquila)</option><option value="Autonoe">Autonoe (feminina, clara)</option><option value="Achernar">Achernar (feminina, suave)</option>
+        <option value="Fenrir">Fenrir (masculina, empolgada)</option><option value="Orus">Orus (masculina, firme)</option><option value="Charon">Charon (masculina, informativa)</option>
+      </select>
+      <label>Modelo (opcional)</label><input class="in" id="geminiModel" placeholder="Deixe vazio para escolher automaticamente" autocomplete="off">
+      <p class="note">Chave grátis em aistudio.google.com → Get API key. O app usa um estilo de narração de “achadinhos da Shopee” (jovem, empolgada, ritmo de reels).</p>
+    </div>
+    <div id="openaiBox">
+      <label>Chave da OpenAI</label><input class="in" id="openaiKey" type="password" placeholder="Deixe vazio para manter a atual" autocomplete="off">
+      <label>Voz</label><select id="voice"><option value="nova">Nova (feminina, animada)</option><option value="shimmer">Shimmer (feminina, suave)</option><option value="coral">Coral (feminina)</option><option value="onyx">Onyx (masculina, grave)</option><option value="echo">Echo (masculina)</option><option value="ash">Ash (masculina, jovem)</option></select>
+    </div>
   </div>
   <div class="card">
     <div class="sec-t">Roteiro com Claude (opcional)</div>
@@ -294,8 +320,8 @@ function refreshMode() {
   document.querySelectorAll('#mode button').forEach(b => b.classList.toggle('on', b.dataset.mode === S.mode));
   $('modeInfo').textContent = S.mode === 'std'
     ? 'Animação vertical 9:16 com legendas palavra por palavra, preço, música e narração. Grátis e rápido.'
-    : (S.srv.ai ? 'Suas fotos ganham movimento real de câmera por IA, em 1080p. Usa créditos do fal.ai (1 clipe por cena com IA).'
-                : 'Sem chave de IA em Ajustes: o HD usa a animação local em 1080p. Configure o fal.ai para animar as fotos por IA.');
+    : (S.srv.ai ? 'Suas fotos ganham movimento real de câmera por IA, em 1080p. Usa créditos ' + (S.srv.videoProvider === 'kling' ? 'da Kling' : 'do fal.ai') + ' (1 clipe por cena com IA).'
+                : 'Sem chave de IA em Ajustes: o HD usa a animação local em 1080p. Configure o fal.ai ou a Kling para animar as fotos por IA.');
 }
 document.querySelectorAll('#mode button').forEach(b => b.onclick = () => { S.mode = b.dataset.mode; store.set('mode', S.mode); refreshMode(); });
 $('anti').checked = S.anti;
@@ -347,32 +373,47 @@ const NOSERVER = 'Este site não tem servidor para consultar a Shopee. Rode "nod
 const hdr = () => { const h = { 'Content-Type': 'application/json' }, pw = $('apppass').value; if (pw) h['x-app-password'] = pw; return h; };
 const apiBase = () => $('worker').value.trim().replace(/\/$/, '');
 function setBadge(id, ok, yes, no) { const b = $(id); b.textContent = ok ? yes : no; b.className = 'badge ' + (ok ? 'ok' : 'no'); }
+function syncProviders() {
+  const v = $('videoProvider').value, t = $('ttsProvider').value;
+  $('falBox').hidden = v !== 'fal'; $('klingBox').hidden = v !== 'kling';
+  $('geminiBox').hidden = t !== 'gemini'; $('openaiBox').hidden = t !== 'openai';
+}
+$('videoProvider').addEventListener('change', syncProviders); $('ttsProvider').addEventListener('change', syncProviders);
 async function checkStatus() {
   try {
     const r = await fetch('/api/status'); const d = await r.json();
-    S.srv = { reached: true, configured: d.configured, ai: d.ai, tts: d.tts };
+    S.srv = { reached: true, configured: d.configured, ai: d.ai, tts: d.tts, videoProvider: d.videoProvider, ttsProvider: d.ttsProvider };
     setBadge('bShopee', d.configured, 'configurado', 'não configurado');
     setBadge('bAI', d.ai, 'ativo', 'sem chave'); setBadge('bTTS', d.tts, 'ativo', 'sem chave');
     if (d.falModel && !$('falModel').value) $('falModel').placeholder = d.falModel;
+    if (d.klingModel && !$('klingModel').value) $('klingModel').placeholder = d.klingModel;
+    if (d.klingBase && !$('klingBase').value) $('klingBase').placeholder = d.klingBase;
     if (d.voice) $('voice').value = d.voice;
+    if (d.geminiVoice) $('geminiVoice').value = d.geminiVoice;
+    if (d.geminiModel && !$('geminiModel').value) $('geminiModel').value = d.geminiModel;
+    $('videoProvider').value = d.videoChoice || d.videoProvider || 'fal';
+    $('ttsProvider').value = d.ttsChoice || d.ttsProvider || 'gemini';
+    syncProviders();
     $('connNote').textContent = '';
   } catch (e) {
-    S.srv = { reached: false, configured: false, ai: false, tts: false };
+    S.srv = { reached: false, configured: false, ai: false, tts: false, videoProvider: '', ttsProvider: '' };
     ['bShopee', 'bAI', 'bTTS'].forEach(i => setBadge(i, false, '', 'sem servidor'));
     $('connNote').textContent = NOSERVER;
   }
   $('narr').disabled = !S.srv.tts; if (!S.srv.tts) $('narr').checked = false;
-  $('narrTxt').textContent = S.srv.tts ? 'Grava a voz dentro do vídeo' : 'Precisa da chave da OpenAI em Ajustes';
+  $('narrTxt').textContent = S.srv.tts ? 'Grava a voz dentro do vídeo (' + (S.srv.ttsProvider === 'openai' ? 'OpenAI' : 'Google Gemini') + ')' : 'Precisa da chave do Gemini ou da OpenAI em Ajustes';
   refreshMode();
 }
 $('saveAll').onclick = async () => {
   store.set('key', $('key').value); store.set('worker', $('worker').value.trim()); store.set('apppass', $('apppass').value);
   try {
     const r = await fetch('/api/credentials', { method: 'POST', headers: hdr(), body: JSON.stringify({
-      appId: $('appid').value, secret: $('secret').value, falKey: $('falKey').value, falModel: $('falModel').value, openaiKey: $('openaiKey').value, voice: $('voice').value }) });
+      appId: $('appid').value, secret: $('secret').value, falKey: $('falKey').value, falModel: $('falModel').value, openaiKey: $('openaiKey').value, voice: $('voice').value,
+      videoProvider: $('videoProvider').value, klingAccessKey: $('klingAccessKey').value, klingSecretKey: $('klingSecretKey').value, klingModel: $('klingModel').value, klingBase: $('klingBase').value,
+      ttsProvider: $('ttsProvider').value, geminiKey: $('geminiKey').value, geminiVoice: $('geminiVoice').value, geminiModel: $('geminiModel').value }) });
     const d = await r.json().catch(() => { throw new Error(NOSERVER); });
     if (!r.ok) throw new Error(d.error);
-    ['secret', 'falKey', 'openaiKey'].forEach(i => $(i).value = '');
+    ['secret', 'falKey', 'openaiKey', 'klingAccessKey', 'klingSecretKey', 'geminiKey'].forEach(i => $(i).value = '');
     toast(d.warning || 'Ajustes salvos.'); checkStatus();
   } catch (e) { toast('Erro: ' + e.message, 5000); }
 };
@@ -513,7 +554,7 @@ $('musicSel').addEventListener('change', () => {
 });
 
 /* ============================================================
-   Vídeo HD com IA: foto → clipe animado (via servidor / fal.ai)
+   Vídeo HD com IA: foto → clipe animado (via servidor / fal.ai ou Kling)
    ============================================================ */
 const MOTIONS = [
   'Slow cinematic push-in on the product in the image, soft studio lighting, a gentle light sweep gliding across its surface, subtle floating sparkles. The product keeps exactly the same shape, colors, logo and proportions. Smooth camera, high-end commercial advertisement.',
@@ -869,7 +910,8 @@ async function generate() {
     let voices = null;
     if (useVoice) {
       step('voice', 'run');
-      try { voices = await makeVoices(lines, actx, S.anti ? pick(['nova', 'shimmer', 'coral', 'ash', 'echo'], V.r) : $('voice').value || 'nova'); step('voice', 'ok'); }
+      try { voices = await makeVoices(lines, actx, S.srv.ttsProvider === 'gemini' ? (S.anti ? pick(['Leda', 'Zephyr', 'Puck', 'Aoede', 'Sulafat', 'Kore'], V.r) : $('geminiVoice').value || 'Leda')
+          : (S.anti ? pick(['nova', 'shimmer', 'coral', 'ash', 'echo'], V.r) : $('voice').value || 'nova')); step('voice', 'ok'); }
       catch (e) { toast('Narração indisponível (' + e.message + '). O vídeo sai sem voz.', 6000); step('voice', 'bad'); }
     }
 
