@@ -300,14 +300,15 @@ const GEMINI_VOICES = ['Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir', 'Leda', 'Or
 const DEFAULT_GEMINI_VOICE = 'Leda';
 // Modelos tentados em ordem (o primeiro que responder vale). Pode fixar um com GEMINI_TTS_MODEL / Ajustes.
 const GEMINI_MODELS = ['gemini-3.8-flash-tts', 'gemini-2.5-flash-preview-tts', 'gemini-2.5-flash-tts'];
-const SHOPEE_STYLE = 'Direção de voz: fale português do Brasil como uma pessoa de verdade gravando um story para os amigos, e não como uma locutora. Tom de conversa, caloroso e espontâneo, com sorriso na voz; ritmo variado, com pequenas pausas naturais, respiração leve, ênfase só nas palavras-chave e no preço, e entonação que sobe e desce como na fala do dia a dia. Sem soar robótica, sem leitura de comercial. Diga exatamente este texto, sem acrescentar nada:';
+const SHOPEE_STYLE = 'Direção de voz: fale português do Brasil como uma pessoa de verdade gravando um story para uma amiga, e não como uma locutora. É UM ÚNICO take contínuo: mantenha a mesma energia e o mesmo jeito de falar do começo ao fim, sem recomeçar a entonação a cada frase. Cada linha do texto é só uma pausa natural de respiração. Tom de conversa, caloroso e espontâneo, com sorriso na voz; ritmo variado (acelera um pouco nas partes empolgadas, desacelera no preço), respiração leve, ênfase só nas palavras-chave, entonação que sobe e desce como no dia a dia. Sem soar robótica, sem leitura de comercial. Diga exatamente este texto, sem acrescentar nada:';
 // Deixa o texto "falável": preço por extenso, tira emojis/hashtags/símbolos que o TTS lê de forma estranha
 function speakable(t) {
   return String(t)
     .replace(/R\$\s*(\d{1,3}(?:\.\d{3})*|\d+)(?:[,.](\d{1,2}))?/g, (_, r, c) => { const reais = Number(r.replace(/\./g, '')), cts = c ? Number(c.padEnd(2, '0')) : 0; return reais + (reais === 1 ? ' real' : ' reais') + (cts ? ' e ' + cts + ' centavos' : ''); })
     .replace(/(\d+)\s*%/g, '$1 por cento')
     .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '')
-    .replace(/#\w+/g, '').replace(/[*_~|<>]/g, ' ').replace(/\s+/g, ' ').trim();
+    .replace(/#\w+/g, '').replace(/[*_~|<>]/g, ' ')
+    .replace(/[^\S\n]+/g, ' ').replace(/ ?\n ?/g, '\n').replace(/\n{2,}/g, '\n').trim(); // mantém as quebras de linha (pausas naturais)
 }
 
 function pcmToWav(pcm, rate = 24000) {
@@ -353,7 +354,7 @@ async function tts(req, res) {
   const provider = ttsProvider();
   if (!ttsReady()) return send(res, 400, { error: 'Nenhuma chave de narração configurada (Ajustes → Narração).' });
   let d; try { d = JSON.parse(await readBody(req, 1e5)); } catch { return send(res, 400, { error: 'JSON inválido.' }); }
-  const text = speakable(String(d.text || '').slice(0, 600));
+  const text = speakable(String(d.text || '').slice(0, 1800)); // roteiro inteiro numa chamada só
   if (!text) return send(res, 400, { error: 'Texto vazio.' });
 
   if (provider === 'gemini') {
@@ -371,7 +372,7 @@ async function tts(req, res) {
     headers: { Authorization: 'Bearer ' + creds.openaiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'gpt-4o-mini-tts', voice, input: text, response_format: 'mp3',
-      instructions: 'Fale em português do Brasil como uma pessoa real gravando um story para amigos: tom de conversa, espontâneo e sorridente, ritmo variado com pequenas pausas naturais, ênfase só nas palavras-chave e no preço. Nada de voz de locutor ou de robô.',
+      instructions: 'Fale em português do Brasil como uma pessoa real gravando um story para uma amiga, em um único take contínuo: mesma energia do começo ao fim, sem recomeçar a entonação a cada frase (cada linha é só uma pausa de respiração). Tom de conversa, espontâneo e sorridente, ritmo variado, ênfase só nas palavras-chave e no preço. Nada de voz de locutor ou de robô.',
     }),
   });
   if (!r.ok) return send(res, 502, { error: `OpenAI recusou a narração (${r.status}).` });

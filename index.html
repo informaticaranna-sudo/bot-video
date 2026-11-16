@@ -456,30 +456,43 @@ $('paste').onclick = async () => {
    Roteiro
    ============================================================ */
 function templateScript(r) {
-  const t = shortTitle($('title').value) || 'esse produto', p = fmt($('price').value.trim()), o = fmt($('old').value.trim());
+  // nome "falável": só as primeiras palavras, sem terminar em preposição (títulos da Shopee são longos e cheios de palavras-chave)
+  const t = shortTitle($('title').value).split(' ').slice(0, 4).join(' ').replace(/(\s+(de|do|da|dos|das|com|para|pra|e|em|sem|a|o))+$/i, '') || 'esse produto', p = fmt($('price').value.trim()), o = fmt($('old').value.trim());
   const b = benefits(), st = $('style').value, L = [];
-  const H = { urg: ['Corre que essa oferta da Shopee pode acabar!', 'Para tudo! Olha esse preço na Shopee!', 'Achei uma oferta que não dá pra perder!'],
-    rev: ['Comprei e recomendo demais!', 'Esse achadinho da Shopee valeu cada centavo!', 'Testei e aprovei, olha só!'],
-    cur: ['Você sabia que existe isso?', 'Ninguém me contou que isso existia!', 'Olha o que eu descobri na Shopee!'] }[st];
+  const lowerFirst = x => /^[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][a-záàâãéêíóôõúç]/.test(x) ? x[0].toLowerCase() + x.slice(1) : x;
+  const H = { urg: ['Gente, olha esse preço que eu achei na Shopee.', 'Para tudo, que isso aqui tá muito barato.', 'Achei uma oferta que eu não podia deixar passar.'],
+    rev: ['Comprei isso na Shopee e, olha, valeu a pena.', 'Esse achadinho aqui eu recomendo, de verdade.', 'Testei e aprovei. Deixa eu te mostrar.'],
+    cur: ['Eu não sabia que isso existia, juro.', 'Ninguém me falou disso antes, né?', 'Olha o que eu descobri na Shopee.'] }[st];
   L.push(pick(H, r));
-  L.push(st === 'rev' ? pick([`${t} superou minhas expectativas.`, `Esse é o ${t}.`], r) : pick([`${t}.`, `Conheça ${t}.`], r));
+  L.push(st === 'rev' ? pick([`Esse aqui é o ${t}.`, `É o ${t}, olha só.`], r) : pick([`É o ${t}.`, `Se chama ${t}.`], r));
+  const LEAD = ['E o melhor: ', 'Outra coisa: ', 'E olha: ', 'Sem contar: '];
   const extra = [];
-  b.slice(0, 4).forEach(x => extra.push(x.replace(/[.!]+$/, '') + '.'));
-  if (S.rating >= 4.5) extra.push(`Nota ${Number(S.rating).toFixed(1).replace('.', ',')} dos clientes.`);
-  if (S.sales >= 100) extra.push(`Mais de ${fmtSales(S.sales)} vendidos.`);
+  b.slice(0, 4).forEach((x, i) => extra.push(LEAD[(i + Math.floor(r() * 4)) % LEAD.length] + lowerFirst(x.replace(/[.!]+$/, '')) + '.'));
+  if (S.rating >= 4.5) extra.push(`Tem nota ${Number(S.rating).toFixed(1).replace('.', ',')} dos clientes, o que já diz bastante.`);
+  if (S.sales >= 100) extra.push(`Já saíram mais de ${fmtSales(S.sales)} unidades.`);
   L.push(...extra.slice(0, 5));
-  L.push(p ? (o ? `De ${o} por apenas ${p}!` : pick([`Hoje por apenas ${p}!`, `Tudo isso por ${p}!`], r)) : 'Com preço muito bom hoje!');
-  L.push(pick(['Link na bio ou nos comentários. Aproveita!', 'Clica no link e garante o seu!', 'Toque no link e compre agora!'], r));
+  L.push(p ? (o ? `Era ${o} e tá por ${p} agora.` : pick([`E hoje tá por ${p}.`, `Tudo isso por ${p}.`, `Tá saindo por ${p} agora.`], r)) : 'E o preço tá muito bom hoje.');
+  L.push(pick(['Deixei o link aqui pra você.', 'O link tá aqui, dá uma olhada.', 'Corre no link e garante o seu.'], r));
   return L;
 }
 async function claudeScript() {
-  const prompt = `Crie um roteiro curto em português do Brasil para um vídeo vertical de divulgação (Reels/TikTok/Shopee Vídeo), de uns 20 a 30 segundos.
+  const prompt = `Escreva a fala de um vídeo vertical (Reels/TikTok/Shopee Vídeo) de 20 a 30 segundos, em português do Brasil, como se uma pessoa comum estivesse gravando um story para uma amiga, contando de um achado. A fala será narrada em UMA gravação contínua, e cada linha vira uma legenda na tela.
 Produto: ${$('title').value}
 Preço: ${fmt($('price').value)} ${$('old').value ? '(antes ' + fmt($('old').value) + ')' : ''}
 Benefícios informados: ${benefits().join('; ') || 'nenhum'}
 ${S.rating ? 'Nota dos clientes: ' + S.rating.toFixed(1) : ''} ${S.sales ? 'Vendidos: ' + S.sales : ''}
 Estilo: ${$('style').selectedOptions[0].text}
-Regras: 6 a 8 linhas curtas (máx. 12 palavras cada), falando como uma criadora de conteúdo animada, começando com um gancho forte e terminando com chamada para ação. Use só as informações acima — não invente características, materiais, garantias nem frete. Responda APENAS com um array JSON de strings.`;
+
+Como escrever:
+- Primeira pessoa e linguagem de conversa: "pra", "tá", "né", "olha", "gente", "sinceramente". Pode ter uma reação espontânea ("nossa", "juro").
+- 7 a 9 linhas de tamanhos bem diferentes (de 3 a 14 palavras): misture frases curtas com outras mais longas, como se fala de verdade.
+- Comece com uma frase que prenda de forma natural (uma reação, um problema do dia a dia ou uma surpresa). Nunca comece com "Conheça" ou "Apresentamos".
+- Chame o produto por um nome simples (2 a 4 palavras). Não leia o título do anúncio inteiro.
+- Diga o preço uma vez só, de forma natural, e feche com um convite casual para ver o link, sem gritar.
+- Nada de bordões de comercial ("imperdível", "corre que acaba", "oferta relâmpago"). Sem emojis, hashtags ou aspas.
+- Use SÓ as informações acima. Não invente características, materiais, garantias, frete nem resultados que não estejam nelas.
+Exemplo só do TOM (não copie as frases): ["Gente, olha o que eu achei na Shopee.", "É o [nome simples do produto].", "Eu vi e pensei: nossa, tá barato demais.", "[um benefício informado, dito do jeito que se fala].", "E hoje tá por [preço].", "O link tá aqui, dá uma olhada."]
+Responda APENAS com um array JSON de strings.`;
   const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': $('key').value.trim(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
     body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 800, messages: [{ role: 'user', content: prompt }] }) });
@@ -487,7 +500,7 @@ Regras: 6 a 8 linhas curtas (máx. 12 palavras cada), falando como uma criadora 
   const d = await r.json();
   const arr = JSON.parse(d.content.map(c => c.text || '').join('').replace(/```json|```/g, '').trim());
   if (!Array.isArray(arr) || arr.length < 3) throw new Error('resposta inesperada');
-  return arr.map(String).slice(0, 9);
+  return arr.map(String).slice(0, 10);
 }
 async function buildScript(seed) {
   const r = S.anti ? rng(seed) : () => 0;
@@ -630,12 +643,42 @@ function trimSilence(actx, b) {
   if (z - a < b.sampleRate * .3) return b;
   const o = actx.createBuffer(ch, z - a + 1, b.sampleRate); for (let c = 0; c < ch; c++) o.getChannelData(c).set(b.getChannelData(c).subarray(a, z + 1)); return o;
 }
+// Narração em UMA gravação contínua (entonação natural do começo ao fim).
+// Depois cortamos nas pausas mais silenciosas perto do ponto esperado de cada linha, só para sincronizar cenas e legendas.
+const ensureEnd = s => { s = String(s).trim(); return /[.!?…]$/.test(s) ? s : s + '.'; };
+function splitAtPauses(b, lines) {
+  const total = b.duration, n = lines.length;
+  const w = lines.map(l => Math.max(6, l.replace(/[^\p{L}\p{N}]/gu, '').length) + 4), sum = w.reduce((a, c) => a + c, 0);
+  const floor = Math.min(.9, total / n / 2), hop = .02, hs = Math.floor(b.sampleRate * hop), d = b.getChannelData(0), env = [];
+  for (let i = 0; i + hs <= d.length; i += hs) { let e = 0; for (let k = i; k < i + hs; k++) e += d[k] * d[k]; env.push(Math.sqrt(e / hs)); }
+  const sm = env.map((_, i) => { let e = 0, c = 0; for (let j = Math.max(0, i - 3); j <= Math.min(env.length - 1, i + 3); j++) { e += env[j]; c++; } return e / c; });
+  const cuts = [0]; let acc = 0;
+  for (let i = 0; i < n - 1; i++) {
+    acc += w[i];
+    const exp = acc / sum * total, span = Math.min(w[i], w[i + 1]) / sum * total * .4;
+    const lo = Math.max(cuts[i] + floor, exp - span), hi = Math.min(total - floor * (n - 1 - i), exp + span);
+    let best = exp, bs = Infinity;
+    for (let t = lo; t <= hi; t += hop) { const e = sm[Math.min(sm.length - 1, Math.round(t / hop))] || 0, sc = e + Math.abs(t - exp) * .004; if (sc < bs) { bs = sc; best = t; } }
+    cuts.push(Math.min(Math.max(best, cuts[i] + floor), total - floor * (n - 1 - i)));
+  }
+  cuts.push(total);
+  return cuts.slice(1).map((c, i) => ({ duration: c - cuts[i] }));
+}
 async function makeVoices(lines, actx, voice) {
-  return Promise.all(lines.map(async text => {
+  const clean = lines.map(ensureEnd);
+  const r = await fetch('/api/tts', { method: 'POST', headers: hdr(), body: JSON.stringify({ text: clean.join('\n'), voice }) });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Falha na narração');
+  const full = trimSilence(actx, await actx.decodeAudioData(await r.arrayBuffer()));
+  return { full, parts: splitAtPauses(full, clean) };
+}
+// plano B: uma chamada por linha (soa mais picotado; só entra se a gravação única falhar)
+async function makeVoicesPerLine(lines, actx, voice) {
+  const parts = await Promise.all(lines.map(async text => {
     const r = await fetch('/api/tts', { method: 'POST', headers: hdr(), body: JSON.stringify({ text, voice }) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Falha na narração');
     return trimSilence(actx, await actx.decodeAudioData(await r.arrayBuffer()));
   }));
+  return { full: null, parts };
 }
 
 /* ============================================================
@@ -878,7 +921,8 @@ async function renderVideo(P, onProg) {
     gain.gain.setValueAtTime(P.voices ? .2 : .85, T0); gain.gain.setValueAtTime(P.voices ? .2 : .85, T0 + Math.max(0, total - 1.4)); gain.gain.linearRampToValueAtTime(0, T0 + total);
     src.connect(gain).connect(dest); src.start(T0, (P.music.duration * V.musicOff) % P.music.duration); srcs.push(src); hasAudio = true;
   }
-  if (P.voices) P.voices.forEach((b, i) => { const s = actx.createBufferSource(); s.buffer = b; const gn = actx.createGain(); gn.gain.value = 1.15; s.connect(gn).connect(dest); s.start(T0 + scenes[i].start + .08); srcs.push(s); });
+  if (P.voiceFull) { const s = actx.createBufferSource(); s.buffer = P.voiceFull; const gn = actx.createGain(); gn.gain.value = 1.15; s.connect(gn).connect(dest); s.start(T0 + .08); srcs.push(s); }
+  else if (P.voices) P.voices.forEach((b, i) => { const s = actx.createBufferSource(); s.buffer = b; const gn = actx.createGain(); gn.gain.value = 1.15; s.connect(gn).connect(dest); s.start(T0 + scenes[i].start + .08); srcs.push(s); });
   if (hasAudio || P.voices) { dest.stream.getAudioTracks().forEach(tr => stream.addTrack(tr)); }
   const mime = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m));
   const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: P.W > 800 ? 10e6 : 6e6, audioBitsPerSecond: 160e3 });
@@ -953,19 +997,25 @@ async function generate() {
     }
 
     // 4. narração
-    let voices = null;
+    let voices = null, voiceFull = null;
     if (useVoice) {
       step('voice', 'run');
       const VF = { gemini: { f: ['Leda', 'Zephyr', 'Aoede', 'Sulafat', 'Kore'], m: ['Fenrir', 'Orus', 'Charon', 'Puck'] }, openai: { f: ['nova', 'shimmer', 'coral'], m: ['onyx', 'echo', 'ash'] } }[S.srv.ttsProvider === 'gemini' ? 'gemini' : 'openai'];
       const g = $('voiceG').value, base = S.srv.ttsProvider === 'gemini' ? ($('geminiVoice').value || 'Leda') : ($('voice').value || 'nova');
       const vname = g === 'cfg' ? (S.anti ? pick(VF.f, V.r) : base) : (S.anti ? pick(VF[g], V.r) : VF[g][0]);
-      try { voices = await makeVoices(lines, actx, vname); step('voice', 'ok'); }
-      catch (e) { toast('Narração indisponível (' + e.message + '). O vídeo sai sem voz.', 6000); step('voice', 'bad'); }
+      try {
+        let vr;
+        try { vr = await makeVoices(lines, actx, vname); }
+        catch (e1) { console.warn('Narração contínua falhou, tentando linha a linha:', e1); vr = await makeVoicesPerLine(lines, actx, vname); }
+        voices = vr.parts; voiceFull = vr.full; step('voice', 'ok');
+      } catch (e) { toast('Narração indisponível (' + e.message + '). O vídeo sai sem voz.', 6000); step('voice', 'bad'); }
     }
 
     // 5. cenas e tempos
     const cap = lines.length, estimate = l => Math.max(2.5, l.split(/\s+/).length * .4 + .7);
-    let durs = lines.map((l, i) => voices ? Math.max(1.8, voices[i].duration + .35) : estimate(l)).map(d => d * V.speed);
+    // com gravação contínua, a cena dura exatamente o trecho da fala (sem lacunas artificiais e sem esticar/encolher, para não dessincronizar)
+    let durs = voiceFull ? voices.map((v, i) => v.duration + (i === lines.length - 1 ? .5 : 0))
+      : lines.map((l, i) => voices ? Math.max(1.8, voices[i].duration + .35) : estimate(l)).map(d => d * V.speed);
     if (!voices) { const s0 = durs.reduce((a, b) => a + b, 0); if (s0 < 16) durs = durs.map(d => d * 16 / s0); }
     const imgs = S.images.slice(0, 6), n = imgs.length;
     const hasLay = ['hero', 'detail', 'dual', 'hero'];
@@ -985,7 +1035,7 @@ async function generate() {
       start += dur; return sc;
     });
     const total = start;
-    const P = { scenes, V, total, W: hd ? 1080 : 720, H: hd ? 1920 : 1280, actx, lastDur: scenes[scenes.length - 1].dur, voices, music: null };
+    const P = { scenes, V, total, W: hd ? 1080 : 720, H: hd ? 1920 : 1280, actx, lastDur: scenes[scenes.length - 1].dur, voices, voiceFull, music: null };
 
     // música
     const mus = $('musicSel').value, mf = $('music').files[0];
