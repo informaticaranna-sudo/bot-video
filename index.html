@@ -359,7 +359,20 @@ function num(s) { s = String(s || '').replace(/[^\d.,]/g, ''); if (!s) return 0;
 const brl = n => { const v = Number(n); return isFinite(v) && v > 0 ? v.toFixed(2).replace('.', ',') : ''; };
 const fmtSales = n => { n = Number(n) || 0; return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace('.', ',') + ' mil' : String(n); };
 const benefits = () => $('benefits').value.split('\n').map(s => s.trim()).filter(Boolean);
-const getLines = () => $('script').value.split('\n').map(s => s.trim()).filter(Boolean);
+// Frases muito longas viram 2 ou mais cenas (uma legenda de 20 palavras parada por 8 s cansa e parece robô).
+// Corta de preferência na vírgula e perto do meio, sem terminar a linha em artigo ou preposição.
+const STOPW = new Set(['a', 'o', 'as', 'os', 'um', 'uma', 'de', 'do', 'da', 'dos', 'das', 'em', 'no', 'na', 'nos', 'nas', 'com', 'sem', 'para', 'pra', 'por', 'e', 'ou', 'que', 'se', 'ao', 'à', 'seu', 'sua', 'seus', 'suas', 'meu', 'minha', 'este', 'esse', 'essa', 'esta']);
+function splitLong(line, max = 13) {
+  const w = line.split(/\s+/); if (w.length <= max) return [line];
+  let best = Math.floor(w.length / 2), bs = Infinity;
+  for (let i = 3; i <= w.length - 3; i++) {
+    const prev = w[i - 1].toLowerCase().replace(/[^\p{L}]/gu, ''), next = w[i].toLowerCase().replace(/[^\p{L}]/gu, '');
+    const sc = Math.abs(i - w.length / 2) - (/[,;:.!?…]$/.test(w[i - 1]) ? 2 : 0) + (STOPW.has(prev) ? 2.5 : 0) + (STOPW.has(next) ? 1 : 0) + (i + 1 < w.length && prev === w[i + 1].toLowerCase().replace(/[^\p{L}]/gu, '') ? 4 : 0); // "dia a dia": não separa
+    if (sc < bs) { bs = sc; best = i; }
+  }
+  return [...splitLong(w.slice(0, best).join(' '), max), ...splitLong(w.slice(best).join(' '), max)];
+}
+const getLines = () => $('script').value.split('\n').map(s => s.trim().replace(/([!?…])\.+$/, '$1').replace(/,\.$/, ',')).filter(Boolean).flatMap(l => splitLong(l));
 function shortTitle(t) { t = (t || '').replace(/[|\[\]()]/g, ' ').replace(/\s+/g, ' ').trim(); const w = t.split(' '); return w.length > 8 ? w.slice(0, 8).join(' ') : t; }
 
 /* ============================================================
@@ -699,7 +712,7 @@ function trimSilence(actx, b) {
 }
 // Narração em UMA gravação contínua (entonação natural do começo ao fim).
 // Depois cortamos nas pausas mais silenciosas perto do ponto esperado de cada linha, só para sincronizar cenas e legendas.
-const ensureEnd = s => { s = String(s).trim(); return /[.!?…]$/.test(s) ? s : s + '.'; };
+const ensureEnd = s => { s = String(s).trim(); return /[.!?…,;:]$/.test(s) ? s : s + '.'; };
 function splitAtPauses(b, lines) {
   const total = b.duration, n = lines.length;
   const w = lines.map(l => Math.max(6, l.replace(/[^\p{L}\p{N}]/gu, '').length) + 4), sum = w.reduce((a, c) => a + c, 0);
@@ -984,13 +997,33 @@ async function renderVideo(P, onProg) {
   const chunks = []; rec.ondataavailable = e => e.data.size && chunks.push(e.data);
   const done = new Promise(res => rec.onstop = res);
   frame(0); rec.start(250);
-  const tStart = performance.now() + 250;
+  // O navegador congela a animação quando a aba sai de foco (trocar de app, bloquear a tela...). Sem tratamento, o vídeo ficava
+  // parado no último quadro até a pessoa voltar. Agora a gravação (imagem, áudio e clipes) pausa e continua exatamente de onde parou.
+  let tStart = performance.now() + 250, hiddenAt = null, curI = 0, wake = null;
+  const getWake = async () => { try { if (navigator.wakeLock) wake = await navigator.wakeLock.request('screen'); } catch (e) {} };
+  const onVis = () => {
+    if (document.hidden) {
+      if (hiddenAt !== null) return; hiddenAt = performance.now();
+      try { if (rec.state === 'recording') rec.pause(); } catch (e) {}
+      actx.suspend().catch(() => {}); scenes.forEach(s => { if (s.media.type === 'vid') s.media.video.pause(); });
+    } else if (hiddenAt !== null) {
+      tStart += performance.now() - hiddenAt; hiddenAt = null;
+      actx.resume().catch(() => {});
+      try { if (rec.state === 'paused') rec.resume(); } catch (e) {}
+      const s = scenes[curI]; if (s && s.media.type === 'vid') s.media.video.play().catch(() => {});
+      getWake();
+    }
+  };
+  document.addEventListener('visibilitychange', onVis); getWake();
   await new Promise(res => (function loop() {
-    const el = (performance.now() - tStart) / 1000;
     if (S.cancel) return res();
+    if (hiddenAt !== null) return requestAnimationFrame(loop);
+    const el = (performance.now() - tStart) / 1000;
     if (el >= total) { frame(total - .001); return setTimeout(res, 250); }
-    frame(Math.max(0, el)); onProg(clamp(el / total)); requestAnimationFrame(loop);
+    curI = frame(Math.max(0, el)); onProg(clamp(el / total)); requestAnimationFrame(loop);
   })());
+  document.removeEventListener('visibilitychange', onVis); try { if (wake) wake.release(); } catch (e) {}
+  try { if (rec.state === 'paused') rec.resume(); } catch (e) {}
   rec.stop(); await done; srcs.forEach(s => { try { s.stop(); } catch (e) {} });
   scenes.forEach(s => { if (s.media.type === 'vid') s.media.video.pause(); });
   if (S.cancel) throw new Error('cancelado');
@@ -1109,7 +1142,7 @@ async function generate() {
     }
 
     // 6. render
-    step('render', 'run', 'Gravando em tempo real (' + Math.round(total) + 's). Não troque de aba.');
+    step('render', 'run', 'Gravando em tempo real (' + Math.round(total) + 's). Se sair da tela, a gravação pausa e continua quando você voltar.');
     const res = await renderVideo(P, p => { $('bpct').style.width = Math.round((stepDefs.findIndex(d => d.id === 'render') + p) / stepDefs.length * 100) + '%'; $('bmsg').textContent = `Gravando… ${Math.round(p * total)}s de ${Math.round(total)}s. Não troque de aba.`; });
     step('render', 'ok');
 
