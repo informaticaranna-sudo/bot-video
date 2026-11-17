@@ -159,6 +159,11 @@ textarea{min-height:84px;resize:vertical}
         <textarea id="imgLinks" placeholder="Cole aqui os códigos/links das imagens" style="min-height:60px"></textarea>
         <div class="btns"><button class="btn" id="addImgs" type="button">Adicionar fotos</button></div></details>
 
+      <label>Meus clipes em uso (opcional)</label>
+      <label class="file"><input id="clipsIn" type="file" accept="video/*" multiple>🎥 Enviar clipes meus (até 4)</label>
+      <div class="thumbs" id="clipThumbs"></div>
+      <p class="note">Vídeos curtos seus mostrando o produto sendo usado (de 3 a 15 s, de preferência na vertical). O app coloca narração, legendas e música por cima, e a última cena mostra a foto do produto com o botão de compra. Use só clipes seus ou com autorização de quem gravou. Com clipes enviados, os clipes de IA ficam desligados. Toque numa miniatura para remover.</p>
+
       <div class="sec-t">Roteiro</div>
       <div class="two">
         <div><label>Estilo</label><select id="style"><option value="urg">Urgência / oferta</option><option value="rev">Review / indicação</option><option value="cur">Curiosidade</option></select></div>
@@ -172,7 +177,7 @@ textarea{min-height:84px;resize:vertical}
       <label>Legendas animadas</label>
       <select id="capStyle"><option value="pop">Pop (palavra por palavra)</option><option value="box">Destaque em caixa</option><option value="neon">Neon brilhante</option><option value="bounce">Quicando</option><option value="slide">Deslizando</option><option value="mix">Misto (muda a cada cena)</option></select>
       <label>Transições entre cenas</label>
-      <select id="transSel"><option value="mix">Misto (todas)</option><option value="push">Deslizar vertical</option><option value="swipe">Deslizar lateral</option><option value="zoom">Zoom</option><option value="flash">Flash</option><option value="circle">Círculo</option><option value="spin">Giro</option><option value="glitch">Glitch</option><option value="whip">Chicote</option></select>
+      <select id="transSel"><option value="soft">Suave (recomendado)</option><option value="cut">Corte seco (estilo celular)</option><option value="fade">Dissolver</option><option value="mix">Misto (todas, bem chamativo)</option><option value="push">Deslizar vertical</option><option value="swipe">Deslizar lateral</option><option value="zoom">Zoom</option><option value="flash">Flash</option><option value="circle">Círculo</option><option value="spin">Giro</option><option value="glitch">Glitch</option><option value="whip">Chicote</option></select>
       <div class="row" style="margin-top:16px">
         <div class="tx"><b style="font-size:.92rem">Textos animados na tela</b><small>Etiquetas que surgem durante o vídeo</small></div>
         <label class="sw" style="margin:0"><input type="checkbox" id="ovOn" checked><i></i></label>
@@ -317,7 +322,7 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
 /* ============================================================
    Estado, abas, toast
    ============================================================ */
-const S = { mode: store.get('mode', 'std'), anti: store.get('anti') === '1', images: [], fetchedLink: '', rating: 0, sales: 0,
+const S = { mode: store.get('mode', 'std'), anti: store.get('anti') === '1', images: [], userClips: [], fetchedLink: '', rating: 0, sales: 0,
   scriptDirty: false, srv: { reached: false, configured: false, ai: false, tts: false }, videos: [], busy: false, cancel: false };
 
 function showTab(n) {
@@ -379,6 +384,35 @@ $('imgs').addEventListener('change', async e => {
   S.images = []; for (const f of e.target.files) await addImageSrc(URL.createObjectURL(f)); renderThumbs();
 });
 ['title', 'price'].forEach(i => $(i).addEventListener('input', renderThumbs));
+
+/* ---- clipes do próprio usuário ---- */
+function clipThumb(v) { const c = document.createElement('canvas'); c.width = c.height = 116; const g = c.getContext('2d'), sc = Math.max(116 / v.videoWidth, 116 / v.videoHeight);
+  g.drawImage(v, (116 - v.videoWidth * sc) / 2, (116 - v.videoHeight * sc) / 2, v.videoWidth * sc, v.videoHeight * sc); return c.toDataURL('image/jpeg', .7); }
+async function addUserClip(file) {
+  const url = URL.createObjectURL(file), v = document.createElement('video');
+  v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+  try {
+    await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('formato não suportado')); setTimeout(() => rej(new Error('demorou demais para abrir')), 25000); });
+    if (!v.videoWidth || !isFinite(v.duration) || v.duration < 1) throw new Error('o clipe é curto demais ou não pôde ser lido');
+    S.userClips.push({ url, video: v, name: file.name, dur: v.duration, thumb: clipThumb(v) });
+  } catch (e) { URL.revokeObjectURL(url); throw e; }
+}
+// posiciona o clipe no ponto inicial e espera o quadro ficar pronto (evita 1º quadro preto na gravação)
+function primeClip(v, off) { return new Promise(res => { const done = () => { v.removeEventListener('seeked', done); res(); }; v.addEventListener('seeked', done);
+  try { v.currentTime = off + .001; } catch (e) { return res(); } setTimeout(res, 2500); }); }
+function renderClipThumbs() {
+  const box = $('clipThumbs'); box.innerHTML = '';
+  S.userClips.forEach(c => { const t = document.createElement('img'); t.src = c.thumb; t.title = c.name + ' · ' + c.dur.toFixed(1).replace('.', ',') + ' s — toque para remover';
+    t.onclick = () => { c.video.pause(); URL.revokeObjectURL(c.url); S.userClips = S.userClips.filter(x => x !== c); renderClipThumbs(); }; box.appendChild(t); });
+}
+$('clipsIn').addEventListener('change', async e => {
+  const files = [...e.target.files]; e.target.value = '';
+  for (const f of files) {
+    if (S.userClips.length >= 4) { toast('O limite é de 4 clipes; os outros foram ignorados.'); break; }
+    try { await addUserClip(f); } catch (err) { toast('Não consegui usar "' + f.name + '": ' + err.message, 6000); }
+  }
+  renderClipThumbs();
+});
 
 /* ============================================================
    Servidor: status, credenciais, produto
@@ -694,7 +728,7 @@ const TR = .42; // duração das transições
 
 function makeVars(seed, anti) {
   const r = rng(seed), shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-  const sel = $('transSel').value, trans = sel === 'mix' ? ['push', 'zoom', 'swipe', 'flash', 'circle', 'spin', 'glitch', 'whip'] : [sel];
+  const sel = $('transSel').value, TSETS = { soft: ['fade', 'cut', 'swipe', 'cut', 'fade', 'push'], mix: ['push', 'zoom', 'swipe', 'flash', 'circle', 'spin', 'glitch', 'whip'] }, trans = TSETS[sel] || [sel];
   return { r, anti, phase: r() * 6.28,
     accent: anti ? pick(ACCENTS, r) : ACCENTS[0],
     tint: anti ? { h: Math.floor(r() * 360), a: .05 + r() * .06 } : null,
@@ -759,10 +793,10 @@ function drawScene(g, sc, t, V) {
   g.save();
   if (V.zoom !== 1) { g.translate(360, 640); g.scale(V.zoom, V.zoom); g.translate(-360, -640); }
   if (sc.layout === 'full' || (m.type === 'vid')) {
-    const dir = sc.i % 2 ? -1 : 1, z = 1.06 + .12 * p * (m.type === 'vid' ? .4 : 1);
+    const dir = sc.i % 2 ? -1 : 1, z = sc.real ? 1.03 : 1.06 + .12 * p * (m.type === 'vid' ? .4 : 1);
     g.fillStyle = '#000'; g.fillRect(0, 0, 720, 1280);
-    coverIn(g, m, 0, 0, 720, 1280, z, dir * (p - .5) * .06, 0);
-    sparkles(g, t, ph);
+    coverIn(g, m, 0, 0, 720, 1280, z, sc.real ? 0 : dir * (p - .5) * .06, 0); // clipe real: sem pan artificial nem brilhos
+    if (!sc.real) sparkles(g, t, ph);
   } else if (sc.layout === 'hero') {
     backdrop(g, m, t, V);
     const h = clamp(560 / m.ar, 400, 560), k = ease.back((t - .04) / .6), fy = Math.sin(t * 1.5 + ph) * 10;
@@ -879,7 +913,8 @@ function finish(g, el, P, V) {
 /* ---- composição / transições ---- */
 function composite(g, A, B, type, k, P) {
   const W = P.W, H = P.H; g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
-  if (type === 'push') { const e = ease.io(k); g.drawImage(A, 0, -e * H, W, H); g.drawImage(B, 0, (1 - e) * H, W, H); }
+  if (type === 'fade') { g.drawImage(A, 0, 0, W, H); g.save(); g.globalAlpha = ease.io(k); g.drawImage(B, 0, 0, W, H); g.restore(); }
+  else if (type === 'push') { const e = ease.io(k); g.drawImage(A, 0, -e * H, W, H); g.drawImage(B, 0, (1 - e) * H, W, H); }
   else if (type === 'zoom') { g.drawImage(B, 0, 0, W, H); const s = 1 + ease.out(k) * .35; g.save(); g.globalAlpha = 1 - ease.out(k); g.translate(W / 2, H / 2); g.scale(s, s); g.drawImage(A, -W / 2, -H / 2, W, H); g.restore(); }
   else if (type === 'swipe') { const e = ease.io(k); g.drawImage(A, -e * W, 0, W, H); g.drawImage(B, (1 - e) * W, 0, W, H); g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect((1 - e) * W - 14, 0, 14, H); }
   else if (type === 'circle') { g.drawImage(A, 0, 0, W, H); g.save(); g.beginPath(); g.arc(W / 2, H / 2, ease.io(k) * Math.hypot(W, H) / 2, 0, 6.3); g.clip(); g.drawImage(B, 0, 0, W, H); g.restore(); }
@@ -907,7 +942,7 @@ async function renderVideo(P, onProg) {
   const frame = el => {
     let i = 0; while (i < scenes.length - 1 && el >= scenes[i + 1].start) i++;
     const sc = scenes[i], t = el - sc.start; mediaPlay(sc, t);
-    if (i > 0 && t < TR) { const pv = scenes[i - 1]; mediaPlay(pv, 0);
+    if (i > 0 && t < TR && sc.trans !== 'cut') { const pv = scenes[i - 1]; mediaPlay(pv, 0);
       draw(ga, pv, pv.dur + t); draw(gb, sc, t); composite(g, bufA, bufB, sc.trans, t / TR, P); }
     else draw(g, sc, t);
     overlays(g, el, total, P, V); finish(g, el, P, V); return i;
@@ -959,7 +994,7 @@ $('cancel').onclick = () => { S.cancel = true; $('bmsg').textContent = 'Cancelan
 
 async function generate() {
   if (S.busy) return; S.busy = true; S.cancel = false; $('make').disabled = true;
-  const hd = S.mode === 'hd', useAI = hd && S.srv.ai, useVoice = $('narr').checked && S.srv.tts;
+  const hd = S.mode === 'hd', useAI = hd && S.srv.ai && !S.userClips.length, useVoice = $('narr').checked && S.srv.tts;
   let actx = null;
   try {
     if (!window.MediaRecorder) throw new UserErr('Seu navegador não suporta gravação de vídeo. Use o Chrome.');
@@ -1023,19 +1058,28 @@ async function generate() {
     const style = $('style').value, PILL = { urg: 'OFERTA RELÂMPAGO', rev: 'ACHADINHO APROVADO', cur: 'VOCÊ PRECISA VER' }[style];
     const CS = ['pop', 'box', 'neon', 'bounce', 'slide'], csel = $('capStyle').value;
     const ovLines = $('ovText').value.split('\n').map(x => x.trim()).filter(Boolean), ovAuto = ovLines.length ? ovLines : benefits().slice(0, 4).map(x => '✔ ' + x);
+    const uc = S.userClips.map(c => c.video), cursors = new Map();
     const scenes = lines.map((text, i) => {
-      const clip = clips.length ? clips[i % clips.length] : null;
+      let clip = clips.length ? clips[i % clips.length] : null, real = false, off = clip ? (Math.floor(i / clips.length) % 2) * 2.2 : 0;
+      if (uc.length && !(i === cap - 1 && n > 0)) { // clipes do usuário em todas as cenas; a última mostra a foto do produto
+        const v = uc[i % uc.length]; let cur = cursors.get(v) || 0; if (cur + durs[i] > v.duration) cur = 0; // cada cena usa um trecho diferente do clipe
+        cursors.set(v, cur + durs[i]); clip = { type: 'vid', video: v }; real = true; off = cur;
+      }
       const media = clip || imgs[i % n];
       const layout = clip ? 'full' : (i === 0 || i === cap - 1) ? 'hero' : (media.ar < .8 && (i + V.shift) % 4 === 1 ? 'full' : hasLay[(i + V.shift) % 4]);
       const fs = i === 0 ? 74 : 64, c = layoutCaption(text, fs), dur = durs[i];
       const sc = { i, text, dur, start, media, media2: imgs[(i + 1) % n] === media && !clip ? media : (clip ? media : imgs[(i + 1) % n]), layout, cap: c,
         speak0: .12, speakDur: Math.max(1, voices ? voices[i].duration : dur * .82), trans: V.trans[(i - 1 + V.trans.length * 4) % V.trans.length],
         cta: i === cap - 1, pill: PILL, capStyle: csel === 'mix' ? CS[(i + V.shift) % CS.length] : csel,
-        ov: i > 0 && i < cap - 1 ? ovAuto[i - 1] : '', vidOff: clip ? (Math.floor(i / clips.length) % 2) * 2.2 : 0 };
+        ov: i > 0 && i < cap - 1 ? ovAuto[i - 1] : '', vidOff: off, real };
       start += dur; return sc;
     });
+    // cenas seguidas com o mesmo clipe (ex.: só 1 clipe enviado): corte seco, pois dissolver o clipe nele mesmo não faz sentido
+    scenes.forEach((s, i) => { if (i > 0 && s.media.type === 'vid' && scenes[i - 1].media.type === 'vid' && s.media.video === scenes[i - 1].media.video) s.trans = 'cut'; });
     const total = start;
     const P = { scenes, V, total, W: hd ? 1080 : 720, H: hd ? 1920 : 1280, actx, lastDur: scenes[scenes.length - 1].dur, voices, voiceFull, music: null };
+
+    if (uc.length) { const seen = new Set(); for (const s of scenes) if (s.real && !seen.has(s.media.video)) { seen.add(s.media.video); await primeClip(s.media.video, s.vidOff); } }
 
     // música
     const mus = $('musicSel').value, mf = $('music').files[0];
