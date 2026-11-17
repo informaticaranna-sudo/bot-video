@@ -3,6 +3,7 @@
 //  - consulta a API de afiliados da Shopee (dados + foto do produto)
 //  - Vídeo HD: gera clipes animados por IA a partir das fotos (fal.ai OU Kling AI direto, imagem → vídeo)
 //  - Narração: voz sintética (Google Gemini TTS ou OpenAI TTS) para entrar dentro do vídeo
+//  - Converte o vídeo gravado pelo navegador num MP4 padrão de celular (H.264 + AAC) com o ffmpeg
 // Uso: crie um arquivo .env (veja .env.example) e rode:  node server.js
 // Depois abra http://localhost:3000
 
@@ -10,6 +11,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
+const { spawn, spawnSync } = require('child_process');
 
 // --- carrega .env simples ---
 try {
@@ -73,6 +76,58 @@ const ttsProvider = () => {
 };
 
 const PASSWORD = process.env.APP_PASSWORD || ''; // opcional: protege o app se for hospedado publicamente
+// ================= ffmpeg: MP4 que abre no celular e na Shopee =================
+// O navegador grava um MP4 "fragmentado", com cor yuvj420p e taxa de quadros variável: toca no computador, mas galerias e o upload
+// da Shopee costumam recusar. O ffmpeg refaz o arquivo como MP4 padrão: H.264 (yuv420p), AAC, 30 fps fixos e índice no começo (faststart).
+// Procura, nesta ordem: FFMPEG_PATH, o pacote ffmpeg-static (instalado pelo npm install) e o "ffmpeg" do sistema.
+let FFMPEG = null;
+(function findFfmpeg() {
+  let stat = null; try { stat = require('ffmpeg-static'); } catch {}
+  for (const c of [process.env.FFMPEG_PATH, stat, 'ffmpeg'].filter(Boolean)) {
+    try {
+      const v = spawnSync(c, ['-hide_banner', '-encoders'], { timeout: 10000, encoding: 'utf8' });
+      if (v.status === 0 && /libx264/.test(v.stdout) && /\baac\b/.test(v.stdout)) { FFMPEG = c; return; }
+    } catch {}
+  }
+})();
+
+const readBuf = async (req, limit) => {
+  const parts = []; let n = 0;
+  for await (const c of req) { n += c.length; if (n > limit) throw new Error('Vídeo grande demais.'); parts.push(c); }
+  return Buffer.concat(parts);
+};
+
+async function convertVideo(req, res, qs) {
+  if (!FFMPEG) return send(res, 501, { error: 'O servidor não tem o ffmpeg. Rode "npm install" na pasta do app e reinicie.' });
+  let buf; try { buf = await readBuf(req, 400e6); } catch (e) { return send(res, 413, { error: e.message }); }
+  if (buf.length < 1000) return send(res, 400, { error: 'Vídeo vazio.' });
+  const hasAudio = qs.get('audio') === '1';
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'shopee-video-')), inp = path.join(dir, 'in.bin'), out = path.join(dir, 'out.mp4');
+  try {
+    await fs.promises.writeFile(inp, buf); buf = null;
+    const args = ['-y', '-hide_banner', '-loglevel', 'error', '-i', inp];
+    if (!hasAudio) args.push('-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo'); // sem áudio: coloca uma faixa muda (alguns apps exigem trilha de áudio)
+    args.push('-map', '0:v:0', '-map', hasAudio ? '0:a:0?' : '1:a:0');
+    if (!hasAudio) args.push('-shortest');
+    args.push('-vf', 'fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2:out_range=tv,format=yuv420p',
+      '-c:v', 'libx264', '-profile:v', 'high', '-level', '4.0', '-preset', 'fast', '-crf', '20', '-maxrate', '10M', '-bufsize', '20M', '-g', '60',
+      '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv',
+      '-c:a', 'aac', '-b:a', '160k', '-ar', '44100', '-ac', '2',
+      '-movflags', '+faststart', '-map_metadata', '-1', out);
+    await new Promise((ok, fail) => {
+      const p = spawn(FFMPEG, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+      let err = ''; p.stderr.on('data', d => { if (err.length < 4000) err += d; });
+      const kill = setTimeout(() => { p.kill('SIGKILL'); fail(new Error('A conversão demorou demais.')); }, 240000);
+      p.on('error', e => { clearTimeout(kill); fail(e); });
+      p.on('close', code => { clearTimeout(kill); code === 0 ? ok() : fail(new Error('ffmpeg: ' + (err.trim().split('\n').pop() || 'código ' + code))); });
+    });
+    const mp4 = await fs.promises.readFile(out);
+    res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Length': mp4.length });
+    res.end(mp4);
+  } catch (e) { if (!res.headersSent) send(res, 500, { error: 'Falha ao converter o vídeo: ' + e.message }); else res.end(); }
+  finally { fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {}); }
+}
+
 // Hospedado (a plataforma define PORT) = público: exige APP_PASSWORD. Local = só aceita conexões do próprio computador.
 const PUBLIC = !!process.env.PORT || process.env.HOST === '0.0.0.0';
 const HOST = process.env.HOST || (PUBLIC ? '0.0.0.0' : '127.0.0.1');
@@ -402,15 +457,16 @@ http.createServer(async (req, res) => {
     const url = req.url.split('?')[0], qs = new URLSearchParams(req.url.split('?')[1] || '');
     if (req.method === 'GET' && url === '/api/status')
       return send(res, 200, { configured: !!(creds.appId && creds.secret), ai: videoReady(), tts: ttsReady(),
-        needsPassword: !!PASSWORD, falModel: falModel(), voice: creds.voice || 'nova',
+        needsPassword: !!PASSWORD, convert: !!FFMPEG, falModel: falModel(), voice: creds.voice || 'nova',
         videoProvider: videoProvider(), videoChoice: creds.videoProvider || '', falOk: falReady(), klingOk: klingReady(),
         klingModel: klingModel(), klingBase: klingBase(),
         ttsProvider: ttsProvider(), ttsChoice: creds.ttsProvider || '', geminiOk: !!creds.geminiKey, openaiOk: !!creds.openaiKey,
         geminiVoice: creds.geminiVoice || DEFAULT_GEMINI_VOICE, geminiModel: creds.geminiModel || '' });
     if (req.method === 'POST' && url === '/api/credentials') return saveCreds(req, res);
 
-    if (url.startsWith('/api/ai/') || url === '/api/tts') {
+    if (url.startsWith('/api/ai/') || url === '/api/tts' || url === '/api/convert') {
       if (!authed(req)) return denied(res);
+      if (req.method === 'POST' && url === '/api/convert') return await convertVideo(req, res, qs);
       if (req.method === 'POST' && url === '/api/ai/start') return await aiStart(req, res);
       if (req.method === 'GET' && url === '/api/ai/status') return await aiStatus(req, res, qs.get('id'));
       if (req.method === 'GET' && url === '/api/ai/file') return await aiFile(req, res, qs.get('id'));
@@ -446,5 +502,6 @@ http.createServer(async (req, res) => {
   else console.log('Vídeo HD (IA): ' + (videoProvider() === 'kling' ? 'Kling AI (' + klingModel() + ')' : 'fal.ai'));
   if (!ttsReady()) console.log('Narração: sem GEMINI_API_KEY nem OPENAI_API_KEY — o vídeo sairá só com música e legendas.');
   else console.log('Narração: ' + (ttsProvider() === 'gemini' ? 'Google Gemini' : 'OpenAI'));
+  console.log(FFMPEG ? 'MP4 para celular/Shopee: ativo (ffmpeg).' : 'ATENÇÃO: sem ffmpeg — o vídeo sairá no formato do navegador, que pode não abrir no celular/Shopee. Rode "npm install" (instala o ffmpeg-static) ou defina FFMPEG_PATH.');
   if (PUBLIC && !PASSWORD) console.log('ATENÇÃO: servidor público sem APP_PASSWORD. A API ficará bloqueada até você definir essa variável.');
 });

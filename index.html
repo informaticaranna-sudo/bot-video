@@ -31,8 +31,10 @@ h3{font-size:.8rem;letter-spacing:.1em;text-transform:uppercase;color:var(--mut)
 .modeinfo{font-size:.8rem;color:var(--mut);margin:8px 2px 18px}
 
 .field{position:relative}
-.field input{width:100%;padding:17px 58px 17px 16px;border-radius:14px;background:var(--s1);border:1.5px solid var(--bd);color:var(--tx);font:inherit;font-size:.98rem;outline:none}
+.field input{width:100%;padding:17px 116px 17px 16px;border-radius:14px;background:var(--s1);border:1.5px solid var(--bd);color:var(--tx);font:inherit;font-size:.98rem;outline:none}
 .field input:focus{border-color:var(--or)}
+.field .okb{position:absolute;right:58px;top:8px;height:42px;min-width:48px;padding:0 12px;border-radius:11px;border:1.5px solid var(--or);color:var(--or);font-weight:800;font-size:.92rem;letter-spacing:.02em}
+.field .okb:disabled{opacity:.6;cursor:progress}
 .field .ico{position:absolute;right:8px;top:8px;width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,var(--or2),var(--or));color:#fff;display:grid;place-items:center;font-size:1.25rem}
 .hint{font-size:.82rem;color:var(--mut);margin:10px 2px 18px}
 
@@ -124,9 +126,10 @@ textarea{min-height:84px;resize:vertical}
 
   <div class="field">
     <input id="link" placeholder="Cole o link do produto na Shopee" inputmode="url" autocomplete="off" autocapitalize="off">
+    <button class="okb" id="ok" type="button" aria-label="Buscar dados do produto">OK</button>
     <button class="ico" id="paste" type="button" aria-label="Colar link"><svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2.5"/><path d="M9 4.5h6v2.5H9z" fill="currentColor"/><path d="M9 12h6M9 16h4"/></svg></button>
   </div>
-  <p class="hint">💡 No Shopee, abra o produto e toque em Compartilhar › Copiar link.</p>
+  <p class="hint">💡 No Shopee, abra o produto e toque em Compartilhar › Copiar link. Depois cole aqui e toque em <b>OK</b> para preencher os dados do produto.</p>
 
   <div class="card prod" id="prod" hidden>
     <img id="prodImg" alt="">
@@ -430,7 +433,7 @@ $('videoProvider').addEventListener('change', syncProviders); $('ttsProvider').a
 async function checkStatus() {
   try {
     const r = await fetch('/api/status'); const d = await r.json();
-    S.srv = { reached: true, configured: d.configured, ai: d.ai, tts: d.tts, videoProvider: d.videoProvider, ttsProvider: d.ttsProvider };
+    S.srv = { reached: true, configured: d.configured, ai: d.ai, tts: d.tts, convert: !!d.convert, videoProvider: d.videoProvider, ttsProvider: d.ttsProvider };
     setBadge('bShopee', d.configured, 'configurado', 'não configurado');
     setBadge('bAI', d.ai, 'ativo', 'sem chave'); setBadge('bTTS', d.tts, 'ativo', 'sem chave');
     if (d.falModel && !$('falModel').value) $('falModel').placeholder = d.falModel;
@@ -444,7 +447,7 @@ async function checkStatus() {
     syncProviders();
     $('connNote').textContent = '';
   } catch (e) {
-    S.srv = { reached: false, configured: false, ai: false, tts: false, videoProvider: '', ttsProvider: '' };
+    S.srv = { reached: false, configured: false, ai: false, tts: false, convert: false, videoProvider: '', ttsProvider: '' };
     ['bShopee', 'bAI', 'bTTS'].forEach(i => setBadge(i, false, '', 'sem servidor'));
     $('connNote').textContent = NOSERVER;
   }
@@ -481,6 +484,23 @@ async function fetchProduct(link) {
   S.fetchedLink = $('link').value.trim();
   renderThumbs();
 }
+// OK: busca o produto pelo link e já preenche nome, preço, fotos, nota e vendas (Configurações avançadas)
+let okBusy = false;
+async function loadProduct() {
+  const link = $('link').value.trim();
+  if (!link) { toast('Cole o link do produto primeiro.'); $('link').focus(); return; }
+  if (okBusy) return; okBusy = true;
+  const b = $('ok'); b.disabled = true; b.textContent = '…';
+  try {
+    if (S.fetchedLink && link !== S.fetchedLink) { $('old').value = ''; S.rating = 0; S.sales = 0; } // outro produto: limpa o que sobrou do anterior
+    await fetchProduct(link);
+    $('adv').open = true;
+    toast($('title').value.trim() ? 'Dados do produto preenchidos. Confira em Configurações avançadas.' : 'Fotos carregadas, mas faltou o nome: preencha em Configurações avançadas.', 4500);
+  } catch (e) { toast(e.message, 6000); }
+  finally { okBusy = false; b.disabled = false; b.textContent = 'OK'; }
+}
+$('ok').onclick = loadProduct;
+$('link').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); loadProduct(); } });
 $('paste').onclick = async () => {
   try { const t = (await navigator.clipboard.readText()).trim(); if (t) { $('link').value = t; toast('Link colado.'); } else toast('A área de transferência está vazia.'); }
   catch (e) { $('link').focus(); toast('Toque e segure no campo para colar o link.'); }
@@ -959,7 +979,7 @@ async function renderVideo(P, onProg) {
   if (P.voiceFull) { const s = actx.createBufferSource(); s.buffer = P.voiceFull; const gn = actx.createGain(); gn.gain.value = 1.15; s.connect(gn).connect(dest); s.start(T0 + .08); srcs.push(s); }
   else if (P.voices) P.voices.forEach((b, i) => { const s = actx.createBufferSource(); s.buffer = b; const gn = actx.createGain(); gn.gain.value = 1.15; s.connect(gn).connect(dest); s.start(T0 + scenes[i].start + .08); srcs.push(s); });
   if (hasAudio || P.voices) { dest.stream.getAudioTracks().forEach(tr => stream.addTrack(tr)); }
-  const mime = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m));
+  const mime = ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m));
   const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: P.W > 800 ? 10e6 : 6e6, audioBitsPerSecond: 160e3 });
   const chunks = []; rec.ondataavailable = e => e.data.size && chunks.push(e.data);
   const done = new Promise(res => rec.onstop = res);
@@ -974,7 +994,7 @@ async function renderVideo(P, onProg) {
   rec.stop(); await done; srcs.forEach(s => { try { s.stop(); } catch (e) {} });
   scenes.forEach(s => { if (s.media.type === 'vid') s.media.video.pause(); });
   if (S.cancel) throw new Error('cancelado');
-  return { blob: new Blob(chunks, { type: mime.split(';')[0] }), ext: mime.startsWith('video/mp4') ? 'mp4' : 'webm' };
+  return { blob: new Blob(chunks, { type: mime.split(';')[0] }), ext: mime.startsWith('video/mp4') ? 'mp4' : 'webm', audio: hasAudio || !!P.voices };
 }
 
 /* ============================================================
@@ -1003,6 +1023,7 @@ async function generate() {
     if (useAI) defs.push({ id: 'ai', label: 'Animando as fotos com IA' });
     if (useVoice) defs.push({ id: 'voice', label: 'Gravando a narração' });
     defs.push({ id: 'render', label: hd ? 'Montando o vídeo em HD' : 'Montando o vídeo' });
+    if (S.srv.convert) defs.push({ id: 'conv', label: 'Convertendo para MP4 de celular' });
     openBusy(defs);
     const seed = S.anti ? ((Date.now() ^ (Math.random() * 1e9)) >>> 0) : 12345, V = makeVars(seed, S.anti);
 
@@ -1089,12 +1110,20 @@ async function generate() {
 
     // 6. render
     step('render', 'run', 'Gravando em tempo real (' + Math.round(total) + 's). Não troque de aba.');
-    const res = await renderVideo(P, p => { $('bpct').style.width = Math.round(((stepDefs.length - 1) + p) / stepDefs.length * 100) + '%'; $('bmsg').textContent = `Gravando… ${Math.round(p * total)}s de ${Math.round(total)}s. Não troque de aba.`; });
+    const res = await renderVideo(P, p => { $('bpct').style.width = Math.round((stepDefs.findIndex(d => d.id === 'render') + p) / stepDefs.length * 100) + '%'; $('bmsg').textContent = `Gravando… ${Math.round(p * total)}s de ${Math.round(total)}s. Não troque de aba.`; });
     step('render', 'ok');
 
+    // converte para o MP4 de celular
+    let out = res;
+    if (S.srv.convert) {
+      step('conv', 'run', 'Convertendo para MP4 de celular…');
+      try { out = await convertForPhone(res); step('conv', 'ok'); }
+      catch (e) { step('conv', 'bad'); toast('Não consegui converter para o MP4 de celular (' + e.message + '). Este arquivo pode não abrir no celular/Shopee.', 9000); }
+    } else toast('O servidor está sem o ffmpeg, então este arquivo pode não abrir no celular/Shopee. Rode "npm install" na pasta do app e reinicie o servidor.', 12000);
+
     // resultado
-    const url = URL.createObjectURL(res.blob), title = $('title').value.trim() || 'produto', caption = makeCaption();
-    S.videos.unshift({ url, ext: res.ext, title, caption, at: Date.now(), hd, ai: clips.length > 0, voice: !!voices });
+    const url = URL.createObjectURL(out.blob), title = $('title').value.trim() || 'produto', caption = makeCaption();
+    S.videos.unshift({ url, ext: out.ext, phone: !!out.phone, title, caption, at: Date.now(), hd, ai: clips.length > 0, voice: !!voices });
     $('busy').hidden = true; showResult(S.videos[0]);
   } catch (e) {
     $('busy').hidden = true;
@@ -1102,6 +1131,13 @@ async function generate() {
     else if (e.user) { toast(e.message, 6000); if (e.openAdv) $('adv').open = true; }
     else { console.error(e); toast('Erro: ' + e.message, 7000); }
   } finally { if (actx) actx.close().catch(() => {}); S.busy = false; $('make').disabled = false; }
+}
+// Manda a gravação do navegador para o servidor refazer como MP4 padrão (H.264 + AAC, 30 fps fixos, faststart): abre no celular e na Shopee
+async function convertForPhone(res) {
+  const hd = { 'Content-Type': 'application/octet-stream' }, pw = $('apppass').value; if (pw) hd['x-app-password'] = pw;
+  let r; try { r = await fetch('/api/convert?audio=' + (res.audio ? 1 : 0), { method: 'POST', headers: hd, body: res.blob }); } catch (e) { throw new Error(NOSERVER); }
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'erro ' + r.status);
+  return { blob: await r.blob(), ext: 'mp4', phone: true };
 }
 $('make').onclick = generate;
 
